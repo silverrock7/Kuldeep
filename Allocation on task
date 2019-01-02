@@ -1,0 +1,243 @@
+
+
+
+1. create, update of resource requirement
+2. creates with duration, project task, effort hours, from and to date with basic fields
+
+func name: CreateResourceRequirement()
+
+3. Update Resource Requirement function
+UpdateResourceRequirement()
+       
+
+4. Script
+
+
+----------------------------------
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+// New inclusions
+using Microsoft.Crm.Sdk;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+
+namespace CF.v9.PSAPlugins
+{
+    public class ManageResourceRequirementRecord : IPlugin
+    {
+        IOrganizationService service; Entity currentEntity; String entityType; Guid accountGuid, contactGuid;
+        IPluginExecutionContext context; Double effortHours = 0; DateTime startDate, endDate; Decimal retrievedProposedDuration = 0, retrievedFulfilledDuration = 0;
+        ITracingService trace;
+        /// <summary>
+        /// Initializes common parameters to set the IPluginExecutionContext and IOrganizationServiceFactory.
+        /// </summary>
+        /// <param name="serviceProvider">Object of IServiceProvider</param>
+        private void GetOrganizationService(IServiceProvider serviceProvider)
+        {
+            try
+            {
+                context = (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
+                service = ((IOrganizationServiceFactory)serviceProvider.GetService(typeof(IOrganizationServiceFactory))).CreateOrganizationService(context.UserId);
+                trace = (ITracingService)serviceProvider.GetService(typeof(ITracingService)); //((ITracingService)serviceProvider.GetService(typeof(ITracingService)));
+            }
+            catch (Exception e)
+            {
+                //   service.Create(ErrorLogger.LogError(e.Message, e.StackTrace, "AddMembersToAccount", "GetOrganizationServices"));
+            }
+        }
+
+        /// <summary>
+        /// Creates a Resource Requirement Record.
+        /// </summary>
+        private void CreateResourceRequirement()
+        {
+            try
+            {
+                trace.Trace("About to create a Resource Requirement");
+                Entity resourceRequirement = new Entity(Constants.ENTITY_RESOURCE_REQUIREMENTS);
+                Int32 effortInHours = Convert.ToInt32(effortHours * 60);
+                trace.Trace("effort hours - " + effortInHours);
+                resourceRequirement[Constants.RESOURCE_REQUIREMENT_DURATION] = effortInHours;
+                resourceRequirement[Constants.RESOURCE_REQUIREMENT_PROJECT_TASK] = new EntityReference(Constants.ENTITY_PROJECT_TASK, currentEntity.Id);
+                resourceRequirement[Constants.RESOURCE_REQUIREMENT_FROM_DATE] = startDate;
+                trace.Trace("startDate - " + startDate);
+                resourceRequirement[Constants.RESOURCE_REQUIREMENT_TO_DATE] = endDate;
+                trace.Trace("endDate - " + endDate);
+                if (currentEntity.Contains(Constants.PROJECT_TASK_PROJECT))
+                {
+                    resourceRequirement[Constants.RESOURCE_REQUIREMENT_PROJECT] = currentEntity.Attributes[Constants.PROJECT_TASK_PROJECT];
+                }
+                // Below code updated by Shailesh on July 13,2018 for updating Project Task Role on Resource Requirement
+                if (currentEntity.Contains(Constants.PROJECT_TASK_ROLE))
+                {
+                    resourceRequirement[Constants.RESOURCE_REQUIREMENT_ROLE] = currentEntity.Attributes[Constants.PROJECT_TASK_ROLE];
+                }
+                // end of code by Shailesh
+                resourceRequirement[Constants.RESOURCE_REQUIREMENT_NAME] = currentEntity.GetAttributeValue<string>(Constants.PROJECT_TASK_NAME);
+                service.Create(resourceRequirement);
+                trace.Trace("Resource Requirement created of effort hours:" + effortHours);
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Gets the current record in the plugin context
+        /// </summary>
+        private void GetCurrentRecord()
+        {
+            try
+            {
+                trace.Trace("Plugin started");
+                currentEntity = (Entity)context.InputParameters["Target"];
+                if (currentEntity.Attributes.Contains(Constants.PROJECT_TASK_EFFORT_HOURS))
+                {
+                    effortHours = currentEntity.GetAttributeValue<Double>(Constants.PROJECT_TASK_EFFORT_HOURS);
+                    trace.Trace("effort in Task: " + effortHours);
+                }
+                if (currentEntity.Attributes.Contains(Constants.PROJECT_TASK_START_DATE))
+                {
+                    startDate = currentEntity.GetAttributeValue<DateTime>(Constants.PROJECT_TASK_START_DATE);
+                }
+                if (currentEntity.Attributes.Contains(Constants.PROJECT_TASK_END_DATE))
+                {
+                    endDate = currentEntity.GetAttributeValue<DateTime>(Constants.PROJECT_TASK_END_DATE);
+                }
+                trace.Trace("Inside current record");
+
+            }
+            catch (Exception e)
+            {
+                trace.Trace("Error in GetCurrentRecord: " + e);
+                //   service.Create(ErrorLogger.LogError(e.Message, e.StackTrace, "AddMembersToAccount", "GetOrganizationServices"));
+            }
+        }
+
+        /// <summary>
+        /// Updates the associated Resource Requirement record with the updated data from Task entity.
+        /// </summary>
+        private void UpdateResourceRequirement()
+        {
+            try
+            {
+                string fetchXML = "<fetch version='1.0' output-format='xml-platform' mapping='logical' distinct='false'>";
+                fetchXML += "<entity name = 'msdyn_resourcerequirement'>";
+                fetchXML += "<attribute name = 'msdyn_resourcerequirementid' /> ";
+                fetchXML += "<attribute name = 'msdyn_projectid' /> ";                
+                fetchXML += "<attribute name = 'msdyn_name' /> ";
+                fetchXML += "<attribute name = 'createdon' /> ";
+                fetchXML += "<order attribute = 'msdyn_name' descending = 'false' /> ";
+                fetchXML += "<attribute name='msdyn_proposedduration' />";
+                fetchXML += "<attribute name = 'msdyn_fulfilledduration' /> ";
+                fetchXML += "<filter type = 'and'> ";
+                fetchXML += "<condition attribute = 'new_msdyn_projecttask' operator= 'eq' uitype = 'msdyn_projecttask' value = '{" + currentEntity.Id.ToString() + "}' /> ";
+                fetchXML += "</filter>";
+                fetchXML += "</entity>";
+                fetchXML += "</fetch>";
+
+                EntityCollection retrievedResourceRequirements = service.RetrieveMultiple(new FetchExpression(fetchXML));
+                trace.Trace("Retrieved requirements: " + retrievedResourceRequirements.Entities.Count);
+                if (retrievedResourceRequirements.Entities.Count == 1)
+                {
+                    Guid resourceRequirementId = retrievedResourceRequirements.Entities[0].GetAttributeValue<Guid>(Constants.RESOURCE_REQUIREMENT_PRIMARY_KEY);
+
+                    if (resourceRequirementId != Guid.Empty)
+                    {
+                        retrievedFulfilledDuration = retrievedResourceRequirements[0].GetAttributeValue<Int32>(Constants.RESOURCE_REQUIREMENT_FULFILLED_DURATION);
+                        retrievedProposedDuration = retrievedResourceRequirements[0].GetAttributeValue<Int32>(Constants.RESOURCE_REQUIREMENT_PROPOSED_DURATION);
+                        Decimal totalBookedDuration = retrievedProposedDuration + retrievedFulfilledDuration;
+                        CheckIfTaskIsAlreadyBooked(totalBookedDuration);
+                        Entity updateResourceRequirement = new Entity(Constants.ENTITY_RESOURCE_REQUIREMENTS);
+                        updateResourceRequirement[Constants.RESOURCE_REQUIREMENT_PRIMARY_KEY] = resourceRequirementId;
+                        updateResourceRequirement[Constants.RESOURCE_REQUIREMENT_DURATION] = (Int32)effortHours * 60;
+                        updateResourceRequirement[Constants.RESOURCE_REQUIREMENT_DURATION] = (Int32)effortHours * 60;
+                        
+                        if (currentEntity.Attributes.Contains(Constants.PROJECT_TASK_START_DATE))
+                        {
+                            updateResourceRequirement[Constants.RESOURCE_REQUIREMENT_FROM_DATE] = startDate;
+                        }
+                        if (currentEntity.Attributes.Contains(Constants.PROJECT_TASK_END_DATE))
+                        {
+                            updateResourceRequirement[Constants.RESOURCE_REQUIREMENT_TO_DATE] = endDate;
+                        }
+                        if (!retrievedResourceRequirements[0].Contains(Constants.RESOURCE_REQUIREMENT_PROJECT) && currentEntity.Contains(Constants.PROJECT_TASK_PROJECT))
+                        {
+                            updateResourceRequirement[Constants.RESOURCE_REQUIREMENT_PROJECT] = currentEntity.Attributes[Constants.PROJECT_TASK_PROJECT];
+                        }
+                        // Below code updated by Shailesh on July 13,2018 for updating Project Task Role on Resource Requirement
+                        if (currentEntity.Attributes.Contains(Constants.PROJECT_TASK_ROLE) && currentEntity.Attributes[Constants.PROJECT_TASK_ROLE] != null)
+                        {
+                            updateResourceRequirement[Constants.RESOURCE_REQUIREMENT_ROLE] = currentEntity.Attributes[Constants.PROJECT_TASK_ROLE];
+                        }
+                        updateResourceRequirement[Constants.RESOURCE_REQUIREMENT_NAME] = currentEntity.Attributes[Constants.PROJECT_TASK_NAME];
+                        // end of code by Shailesh
+                        service.Update(updateResourceRequirement);
+                        trace.Trace("Resource requirement updated with: " + effortHours);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                trace.Trace("Error in updating Resource Requirement: " + e);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Checks and throws an error to the user if the Task's hours are reduced than that of which are already booked.
+        /// </summary>
+        /// <param name="totalBookedDuration">Decimal value of the booked hours on the Resource Requirement record.</param>
+        private void CheckIfTaskIsAlreadyBooked(Decimal totalBookedDuration)
+        {
+            try
+            {
+                Double changedEffortHours = effortHours * 60;
+                if (changedEffortHours < (Double)totalBookedDuration)
+                {
+                    throw new InvalidPluginExecutionException("This task is already booked for more hours.");
+                }
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// First method from where the plugin execution starts
+        /// </summary>
+        /// <param name="serviceProvider">Object of IServiceProvider class</param>
+        public void Execute(IServiceProvider serviceProvider)
+        {
+            try
+            {
+                GetOrganizationService(serviceProvider);
+                GetCurrentRecord();
+                if (context.MessageName.ToString().ToLower() == "create")
+                {
+                    CreateResourceRequirement();
+                }
+                else if (context.MessageName.ToString().ToLower() == "update")
+                {
+                    trace.Trace("Update trigger");
+                    UpdateResourceRequirement();
+
+                }
+
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+
+        }
+    }
+}
