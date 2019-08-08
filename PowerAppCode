@@ -1,0 +1,70 @@
+1.	List_grievances: 
+a.	New Grievance button: This button will navigate to a frm_NewGrievance Record to capture new grievance from the employee. The code written behind that is:
+Navigate(
+frm_NewGrievance,
+ScreenTransition.Fade
+);
+LookUp(Departments,new_departmentid=ThisItem.Department, new_name)
+LookUp(GrievanceLibrary, Title = TitleGrievance.Text, Image)
+
+Where GrievanceLibrary is the Sharepoint Datasource added in Powerapp and Title and image are the fields created in SharePoint.
+
+To open the Grievance record on frm_Grievance Record, write the below code:
+Navigate(frm_GrievanceRecord,ScreenTransition.Fade,glryGrievances.Selected)
+
+2.	frm_NewGrievanceRecord: 
+To store the new grievance record, we used the Form Screen.
+
+
+On the update button, write the below code:
+Patch(
+    Grievances,
+    Defaults(Grievances),
+    {
+        new_employeefullname: DataCardValue3.Text,
+        new_description: DataCardValue15.Text,
+        _new_departmentl_value: DataCardValue10.Selected.new_departmentid,
+        _new_grievancetypel_value: DataCardValue6.Selected.new_grievancetypeid,
+        new_signature: PenInput4.Image
+    }
+);
+Patch(
+    GrievanceLibrary,
+    Defaults(GrievanceLibrary),
+    {
+        Title: DataCardValue3.Text,
+        Image: First(Collection1).Url
+    }
+);
+UpdateContext({resettext: !resettext});
+UpdateContext({resetcombobox: !resetcombobox});
+Navigate(SuccessScrn,ScreenTransition.Fade);
+3.	frm_CameraScreen
+Insert a Camera Media Control on the form as shown in the below screen shot.
+
+Insert an image control on the form below the Camera Media control.
+Capture button code:
+ClearCollect(Collection1, Camera1.Photo)
+
+Collection 1 s described above is the SharePoint collection object which needs to be cleared and then referred with the new Photo from the Camera Control, which in our case is Camera1.
+
+Confirm button code:
+Confirm Button will only Navigate it to New Grievance form and the code is ass per below:
+Navigate(frm_NewGrievance)
+
+To summarise: 
+1.	We learned how to create a Canvas Power app.
+2.	Different controls that can be used.
+3.	How to store image on Sharepoint in a Power app.
+a.	Again I am sharing the code for storing the image on Sharepoint herewith:
+Patch(
+    GrievanceLibrary,
+    Defaults(GrievanceLibrary),
+    {
+        Title: DataCardValue3.Text,
+        Image: First(Collection1).Url
+    }
+);
+b.	To explain the above code, GrievanceLibrary is the SharePoint site of which Data Source is added.
+c.	Title: This is a field in the Sharepoint library that will store the name of the Grievance. The data type in Sharepoint for Title is Single line Text
+d.	Image: This will store the image in Sharepoint library in Base64 format. The data type of this field will be Multi lines of Text , but, we need to ensure that the rich text format is set to No. Please refer to the below screen shot.
